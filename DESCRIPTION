@@ -1,0 +1,16 @@
+Package: cdcdevopscasestudy
+Type: Package
+Title: This package deploys the CDC Biodiversity - DevOps engineer Case Study 1
+Version: 0.1.0
+Author: Pierre Bodroux
+Maintainer: package maintainer <pierrebodroux@proton.me>
+Description: Written in RMarkdown. To render the code, please call case_study("CDC-bio-test1.Rmd"). To see the case study, open the file "CDC-bio-test1.html". Data sources and documentation in data/.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.2.3
+Imports: 
+    rmarkdown
+Suggests: 
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3

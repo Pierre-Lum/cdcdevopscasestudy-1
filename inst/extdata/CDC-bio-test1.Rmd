@@ -1,0 +1,538 @@
+---
+title: "DevOps engineer -- biodiversity footprint tool (GBS) - Case Study 1"
+author: "Pierre Bodroux"
+date: "`r Sys.Date()`"
+output: 
+   html_document:
+      toc: true
+      toc-depth: 3
+      toc-float: true
+      theme: paper
+      code_folding: hide
+editor_options: 
+  markdown: 
+    wrap: 150
+---
+
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE, include = TRUE, fig.height=5, fig.width=10, fig.align = 'center')
+suppressPackageStartupMessages(library(openxlsx))
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(plotly))
+suppressPackageStartupMessages(library(DT))
+suppressPackageStartupMessages(library(sf))
+suppressPackageStartupMessages(library(giscoR))
+suppressPackageStartupMessages(library(tmap))
+suppressPackageStartupMessages(library(tmaptools))
+suppressPackageStartupMessages(library(ggrepel))
+
+nice_datatable <- function(df, caption = NULL, filter = "top", pageLength = NULL, scrollY = 300, ...) {
+  df %>%
+    datatable(
+      extensions = c("Scroller"),
+      filter = filter,
+      rownames = FALSE,
+      escape = FALSE,
+      caption = caption,
+      options =
+        list(
+          dom = "Brtp",
+          deferRender = FALSE,
+          scroller = TRUE,
+          scrollX = TRUE,
+          scrollY = scrollY,
+          pageLength = pageLength,
+          fixedHeader = FALSE,
+          buttons = NULL,
+          lengthChange = FALSE,
+          ...
+        )
+    )
+}
+
+external_data <- "sources/"
+```
+
+
+
+# Foreword
+
+This question is part of the process of recruitment for the position of DevOps engineer -- biodiversity footprint tool (GBS) at CDC Biodiversité.
+
+The language used in the case study description is English, therefore the following paper will be in English.
+
+
+
+# Executive Summary
+
+The following article details the methodology and results to the following questions: [what is the total static biodiversity loss due to land use
+caused by wheat in every country (in MSA.km²) in 2019?]{.underline}
+
+
+## Perimeter of the question:
+
+1.  [Static biodiversity loss]{.underline}. Definition: To account for impacts lasting beyond the period assessed, GBS results are split into dynamic or periodic gains/losses - occurring within the period assessed -, future - which will occur in the future - and **static or cumulated negative - persistent - impacts** (source: [Global Biodiversity Score : Établir un écosystème d’acteurs pour mesurer la performance biodiversité des activités humaines : Mise à jour 2021](https://www.cdc-biodiversite.fr/publications/global-biodiversity-score-mise-a-jour-2021/)).
+
+    'Static impacts' are cumulated negative impacts, defined so that the sum of remaining biodiversity, expressed in percentage, equals 100%. Total
+    static biodiversity loss is expressed in MSA.km²
+
+2.  [Expressed in MSA.km² unit]{.underline} where MSA is the Mean Species Abundance, a metric expressed in % characterising the intactness of
+    ecosystems. MSA values range from 0% to 100%, where 100% represents an undisturbed pristine ecosystem.
+
+3.  [Period:]{.underline} year 2019.
+
+4.  [Area of interest:]{.underline} every country.
+
+5.  [Element of impact:]{.underline} land use for wheat production.
+
+    The intermediate elements to calculate land use impacts are provided in MSA.km²/tonnes. In consequence, the production and yield are considered
+    elements of impact as well and will be used in the calculation.
+
+
+## Limitations
+
+Exploration of available data for the case study show all 27 EU countries (EU27 does not include UK). Therefore our perimeter "Every Country" as
+stated in the question will be restricted to these countries.
+
+
+## Methodology 
+
+[Calculation of Total Static MSA:]{.underline}
+
+As stated in ["Global Biodiversity Score: Measuring the contributions of business and finance towards the post-2020 global biodiversity framework: 2019 technical update"](https://www.cdc-biodiversite.fr/publications/global-biodiversity-score-2019-technical-update-2020-cahier-15/) publication, page 24:
+Calculation of Total MSA, **"considering land uses other than man-made, the impact of the various drivers are assumed to be additive"**.
+
+[Data:]{.underline}
+
+The total impact calculated on the basis of elements given for the case study in the file crops.csv. In the context of this article, the source of the file was considered trustworthy and has not been challenged.
+
+The total wheat production per country is downloaded from Food and Agriculture Organisation of the United Nations data website ([www.fao.org](https://www.fao.org/faostat/en/#data/QCL)) and was considered trustworthy as well. Methodology and limitations in data collection are exposed in this article as stated on the website.
+
+The two previous datasets are joined using the "countries.csv" file provided in the context of the case study. Some limitations without impact for our study are exposed in this article and one data point was corrected.
+
+
+
+# Analysis
+
+
+## Data exploration
+
+### Source Wheat_2019 dataset
+
+The **production** dataset is not provided. It is an extract of the Food and Agriculture Organisation of the United Nations data website:
+<https://www.fao.org/faostat/en/#data/QCL>.
+
+Extraction parameters:
+
+-   [Countries:]{.underline} All
+
+-   [Elements:]{.underline} "Production Quantity", "Yeld" and "Harvested Area"
+
+-   [Items:]{.underline} "Wheat"
+
+-   [Years:]{.underline} 2019
+
+
+```{r}
+wheat_2019 <- read.csv(paste0(external_data, "FAOSTAT_data_en_11-25-2023.csv"))
+```
+
+Result: **wheat_2019** dataset: `r dim(wheat_2019)[1]` lines and `r dim(wheat_2019)[2]` columns.
+
+```{r}
+names(wheat_2019) <- str_to_lower(names(wheat_2019))
+colnames(wheat_2019) <- gsub("\\.+", "_", colnames(wheat_2019))
+```
+
+
+```{r}
+head(wheat_2019) %>% 
+   nice_datatable(caption = "Top 6 lines of data extracted from FAO website", filter = "none")
+```
+
+The [collection methodology](sources/QCL_methodology_e.pdf) brings some limitations on the data: "Cereals: Area and production data on cereals relate
+to crops harvested for dry grain only. Cereal crops harvested for hay or harvested green for food, feed or silage or used for grazing are therefore
+excluded. Area data relate to harvested area. Some countries report sown or cultivated area only; however, in these countries the sown or cultivated
+area does not differ significantly in normal years from the area actually harvested, either because practically the whole area sown is harvested or
+because the area surveys are conducted around the harvest period."
+
+In this exercise, considering the context, assumption is made that collection methodology does not impact our results. This assumption would need to
+be reassessed in any other analysis.
+
+Furthermore, the data source are flagged as "Official", "Estimated", "From International organisations", Missing values" or "Inputed values".
+
+In this exercise, any value provided is considered as source and will be used. The only considerations would be for "Missing values" and will be
+treated in the processing flow as NA.
+
+
+#### Reducing the complexity of dataset
+
+```{r}
+wheat_2019_sp <- wheat_2019 %>% 
+   mutate(element = paste0(element, " (", unit, ")")) %>% 
+   select(matches('area|element|year|value|flag|note')) %>% 
+   select(-c(year_code, element_code)) %>% 
+   filter(element %in% c("Area harvested (ha)", "Production (t)"))
+
+wheat_2019_sp <- wheat_2019_sp %>% 
+   pivot_wider(names_from = c(element), values_from = c(value)) %>% 
+   group_by(area_code_m49_) %>% 
+   summarise(flag = paste0(unique(flag), collapse = ","),
+            flag_description = paste0(unique(flag_description), collapse = ","),
+            note = paste0(unique(note), collapse = ","),
+            `Area harvested (ha)` = sum(`Area harvested (ha)`, na.rm = TRUE),
+            `Production (t)` = sum(`Production (t)`, na.rm = TRUE))
+```
+
+The dataset is filtered to keep element harvested area and production.
+
+
+### Source "crops.csv" crop_msa_impact
+
+```{r}
+crop_msa_impact <- read.csv(paste0(external_data, 'crops.csv'))
+```
+
+```{r}
+colnames(crop_msa_impact) <- sub("globio_country_", "gc_", colnames(crop_msa_impact))
+```
+
+The **crop_msa_impact** dataset is provided as .csv file, "crops.csv": `r dim(crop_msa_impact)[1]` lines and `r dim(crop_msa_impact)[2]` columns.
+
+To simplify the use of key columns of our dataset, all "globio_country\_\*" columns are renamed "gc\_\*" columns.
+
+```{r}
+head(crop_msa_impact) %>% 
+   nice_datatable(caption = "Top 6 lines of file 'crops.csv'", filter = "none")
+```
+
+
+```{r}
+summary(crop_msa_impact) %>% 
+   nice_datatable(caption = "Summary of columns for 'crops.csv'", filter = "top")
+```
+
+
+#### How many lines of interest (crop: wheat) are presented in the file
+
+```{r}
+length(unique(crop_msa_impact$gc_code))
+```
+
+In this file, 27 unique country codes are describing crop MSA impact.
+
+```{r}
+nrow(crop_msa_impact[crop_msa_impact$item_name %in% c("Wheat"),])
+```
+Looking more specifically at crop "Wheat", we are still considering 27 lines.
+
+#### Checking we have only 1 line crop per country
+
+```{r}
+crop_msa_impact %>%
+   group_by(gc_code,item_name) %>%
+   summarise(.groups = 'drop', lines = n()) %>%
+   filter(lines > 1)
+```
+
+The data are aggregated by country code.
+
+
+#### Reducing the complexity of dataset
+
+```{r}
+crop_msa_impact_static <- crop_msa_impact %>% 
+   select(matches('static|item|gc_code'))
+```
+
+The perimeter of our study is limited to **static biodiversity loss**, therefore we will exclude all all columns presenting dynamic impacts
+
+
+### Source "country_specs.xlsx" [countries]{.underline} dataset
+
+```{r}
+countries <- read.xlsx(paste0(external_data, 'country_specs.xlsx'))
+```
+```{r}
+colnames(countries) <- sub("exiobase_region_", "exr_", colnames(countries))
+colnames(countries) <- sub("globio_country_", "gc_", colnames(countries))
+```
+
+The **countries** dataset is provided as .xslx file, "country_specs.xlsx": `r dim(countries)[1]` lines and `r dim(countries)[2]` columns.
+
+To simplify the use of key columns of our dataset, **"exobase_region\_\*" columns** are renamed **"exr\_\*"** columns and **"globio_country\_\*"**
+**columns** are renamed **"gc\_\*"** columns.
+
+```{r}
+head(countries) %>% 
+   nice_datatable(caption = "Top 6 lines of file 'country_specs.xlsx'", filter = "none")
+```
+
+
+```{r}
+summary(countries) %>% 
+   nice_datatable(caption = "Summary of columns for 'country_specs.xlsx'", 
+                  filter = "top")
+```
+
+
+#### Identification countries presented in crop dataset
+
+```{r}
+countries %>% 
+   filter(gc_code %in% crop_msa_impact$gc_code) %>% 
+   select(gc_name) %>% 
+   unname() %>% 
+   unlist() %>% paste0(collapse = ", ")
+
+```
+
+Looking at the globio_country codes present in crops.csv file, we can see only 27 countries are evaluated in the crop_msa_impact files. As first approach, it looks like european countries.
+
+```{r}
+countries %>% 
+   filter(gc_code %in% crop_msa_impact$gc_code) %>%
+   select(gc_code, gc_name, exr_group_name:is_EU27) %>% 
+   arrange(exr_id) %>% 
+   nice_datatable(caption = "Countries listed in file 'crops.csv'", 
+                  filter = "none")
+```
+
+All the countries are in the region "Europe" and have the flag "EU27". 
+
+
+#### Relationship in the datasets
+
+Looking at the structure of the datasets countries/crop/wheat, the way to join the data does seem straightforward. However, the wheat_2019 dataset
+extracted from the FAO website and the countries is misleading regarding the typology used to define countries.
+
+
+##### Summary of codes of countries in wheat dataset
+
+```{r}
+summary(wheat_2019$area_code_m49_) 
+```
+
+
+##### Codes of countries in country dataset
+
+```{r}
+summary(countries %>% select(FAO_country_code, gc_code)) %>% 
+   nice_datatable(caption = "Summary of column name and globio_country_code in file_country_specs.xlsx", 
+                  filter = "none")
+```
+
+
+##### Joining datasets and missing items
+
+```{r}
+wheat_2019 %>% 
+   filter(!area_code_m49_ %in% countries$gc_code) %>% 
+   select(area_code_m49_, area, element, unit, value, item) %>% 
+   nice_datatable(caption = "Missing countries in FAO data when joining data with globio_country_code", 
+                  filter = "none")
+```
+
+The closest relationship we can use would be area_code_m49\_ in the FAO dataset (presented as UN country code denomination but closer to Globio code
+denomination) and gc_code (Globio). We still have 6 countries not present in this code due to typology choices (China being the total of China
+Mainland and China Taiwan, the two of them being presented in the dataset, etc).
+
+In this Case Study, none of this countries are being presented in the crop.csv file, in consequence, this discrepancy won't have any impact. This
+assumption would need to be reassessed in any other context involving a different perimeter.
+
+
+#### Checking duplicate countries based on globio_country_code
+
+```{r}
+countries_multiple <- countries %>% 
+   group_by(gc_code) %>% 
+   mutate(lines = n()) %>%
+   ungroup() %>%
+   filter(lines >1) %>%
+   select(gc_code, gc_name) %>%
+   arrange(gc_code) 
+
+countries_multiple %>% 
+   nice_datatable(caption = "Code country present several times in file country_specs.xlsx", 
+                  filter = "none", 
+                  scrollY = 250)
+```
+
+In the file describing the countries, the globio_country_code is not unique. However, each line is describing different states in the same country
+code. This is the result of conflicts and political decision but could have considerations in this exercise.
+
+
+#### Countries in file crops.csv duplicated in country_specs.xlsx
+
+```{r}
+crop_msa_impact %>% 
+   filter(gc_code %in% countries_multiple$gc_code) %>% 
+   nrow()
+
+```
+
+This issue will not affect the result of our exercise as none of the codes in countries dataset are present in crops dataset. It is however a point to
+keep in mind for wider case studies.
+
+
+#### Reducing the complexity of dataset
+
+```{r}
+countries_sp <- countries %>% 
+   select(matches('gc_|FAO_|alpha')) %>% 
+   select(-c(FAO_country_code_terrestrial_irrigation, FAO_FRA_country_name, alpha_2_code))
+```
+
+This dataset will be used to join:
+
+\- the FAO dataset (using [countries\$ FAO_country_code]{.underline} and [wheat_2019\$ area_code_m49\_]{.underline}),
+
+\- the crop_msa_impact dataset (using [countries\$ gc_code]{.underline} and [crop_msa_impact\$ gc_code]{.underline}),
+
+\- the world countries geometries (using [countries\$ alpha_3\_code]{.underline} and [world\$ ISO3code]{.underline})
+
+
+#### Associating the spatial geometries to countries
+
+```{r}
+world <- gisco_get_countries(year = '2020')
+countries %>% filter(!alpha_3_code %in% world$ISO3_CODE, gc_code %in% crop_msa_impact$gc_code) %>% 
+   nice_datatable(caption = "Code country not identified in the spatial world dataset", 
+                  filter = "none", 
+                  scrollY = 100)
+```
+
+When associating the geometries, we can see `r countries %>% filter(!alpha_3_code %in% world$ISO3_CODE) %>% nrow()` codes don't exist in the world
+data. Most of them will not have any impact in this study as geographical pr political subdivision of existing countries. However, 1 country (Romania)
+has a code not matching and would be impacting our analysis. The code will be modified in the countries dataset.
+
+```{r}
+countries_sp$alpha_3_code[countries$gc_name == 'Romania'] <- 'ROU'
+```
+
+Note: these mapping codes are likely to exist in other datasets and should be checked against international standards. It is, however, outside the
+perimeter of this case study.
+
+```{r}
+countries_sp <- left_join(countries_sp, 
+                       world %>% select(ISO3_CODE, geometry),
+                       by = c("alpha_3_code" = "ISO3_CODE"))
+```
+
+
+
+# Results 
+
+
+## 2019 Static Biodiversity Loss due to wheat cultures in EU27 (MSA.km²) {.tabset .tabset-fade .tabset-pills}
+
+```{r}
+
+countries_crop_msa <- left_join(countries_sp, 
+                                wheat_2019_sp, 
+                                by = c("gc_code" = "area_code_m49_"))
+
+countries_crop_msa <- left_join(countries_crop_msa, 
+                                crop_msa_impact_static %>% filter(item_name == "Wheat"), 
+                                by = "gc_code")
+
+countries_crop_msa <- countries_crop_msa %>% 
+   mutate(total_MSA.km2_per_t = countries_crop_msa %>% select(starts_with("msa_")) %>% rowSums(na.rm = TRUE),
+          total_MSA.km2 = `Production (t)`*total_MSA.km2_per_t) %>% 
+             filter(gc_code %in% crop_msa_impact$gc_code)
+```
+
+### Map
+
+```{r, warning = FALSE}
+countries_crop_msa_sf <- st_sf(countries_crop_msa)
+countries_crop_msa_sf <- st_crop(countries_crop_msa_sf,
+                                 st_bbox(countries_crop_msa_sf %>% 
+                                            filter(gc_code %in% crop_msa_impact$gc_code)))
+```
+
+```{r, warning = FALSE}
+ ggplot(data = world) +
+    geom_sf() +
+    geom_sf(data = countries_crop_msa_sf, aes(fill = total_MSA.km2)) +
+    scale_fill_viridis_c(option = "turbo")+
+    geom_sf_text(data = countries_crop_msa_sf, aes(label=alpha_3_code), size=2, color = 'white'
+                 ) +
+    coord_sf(xlim = c(-20, +40), ylim = c(32, 72), expand = FALSE)+
+    labs(x = "", y = "")+
+    ggtitle("Total static biodiversity loss due to crop (MSA.km²)", 
+            subtitle = paste0("Year 2019. Crop: Wheat. Zone: EU27"))+
+   theme(axis.text = element_blank(), 
+         axis.ticks = element_blank(), 
+         panel.grid = element_blank(), 
+         panel.background = element_blank(), 
+         plot.background = element_rect(colour = "darkgrey", fill=NA, linewidth = 1))
+```
+
+### Table
+
+```{r}
+table <- countries_crop_msa %>% 
+   mutate(`Static Biodiversity Loss (MSA.km2)` = round(total_MSA.km2)) %>% 
+   rename(Country = gc_name, 
+          `Area harvest (ha)` = `Area harvested (ha)`) %>% 
+   select(Country, 
+          `Area harvest (ha)`,
+          `Production (t)`,
+          `Static Biodiversity Loss (MSA.km2)`)
+
+table %>%
+   nice_datatable(caption = "2019 Static Biodiversity Loss due to wheat cultures in EU27 (MSA.km²) ", 
+                  filter = "none") %>% 
+   formatStyle(names(table)[4],
+               background = styleColorBar(range(table[,4]), '#ffe5ec'),
+               backgroundSize = '98% 80%',
+               backgroundRepeat = 'no-repeat',
+               backgroundPosition = 'center') %>% 
+   formatStyle(names(table)[3],
+               background = styleColorBar(range(table[,3]), '#e5f2ff'),
+               backgroundSize = '98% 80%',
+               backgroundRepeat = 'no-repeat',
+               backgroundPosition = 'center') %>% 
+   formatStyle(names(table)[2],
+               background = styleColorBar(range(table[,2]), '#fff2e5'),
+               backgroundSize = '98% 80%',
+               backgroundRepeat = 'no-repeat',
+               backgroundPosition = 'center')
+```
+
+### Total MSA.km² per country
+
+```{r, warning=FALSE}
+ggplot(data = countries_crop_msa_sf, aes(x = total_MSA.km2, fill = total_MSA.km2, y = fct_reorder(FAO_country_name, total_MSA.km2)))+
+   geom_col()+
+   scale_fill_viridis_c(option = "turbo", name = "Total MSA.km²")+
+   labs(x = "Total MSA.km²")+
+   ggtitle("2019 Static Biodiversity Loss due to wheat cultures in EU27 (MSA.km²)", 
+           subtitle =  "by country, decreasing.")+
+   theme(axis.title.y = element_blank(), 
+         panel.grid.major  = element_blank(),
+         panel.grid.minor = element_blank(),
+         panel.background = element_blank(), 
+         plot.background = element_rect(colour = "darkgrey", fill=NA, linewidth = 1)
+         )
+```
+
+### Total MSA.km² against production and land use
+
+```{r, warning = FALSE}
+ggplot(data = countries_crop_msa_sf, aes(size = total_MSA.km2, color = total_MSA.km2, x = `Area harvested (ha)`, y = `Production (t)`))+
+   geom_point(position = 'jitter')+
+   geom_text_repel(aes(label = alpha_3_code))+
+   ggtitle("2019 Static Biodiversity Loss due to wheat cultures in EU27 (MSA.km²)", 
+           subtitle =  "by country in regard to production and land use.")+
+   scale_color_viridis_c(option = "turbo", name = "Total MSA.km²")+
+   scale_size_continuous(guide="none")+
+   theme(axis.title.y = element_blank(), 
+         panel.grid.major  = element_blank(),
+         panel.grid.minor = element_blank(),
+         panel.background = element_blank(), 
+         plot.background = element_rect(colour = "darkgrey", fill=NA, linewidth = 1)
+         )
+```
