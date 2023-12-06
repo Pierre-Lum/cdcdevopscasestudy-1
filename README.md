@@ -9,7 +9,7 @@ You can install the development version of cdcdevopscasestudy like so:
 
 ``` r
 # install.packages("devtools")
-devtools::install_github("Pierre-Lum/cdcdevopscasestudy")
+devtools::install_github("Pierre-Lum/cdcdevopscasestudy-1")
 ```
 
 ## Example
